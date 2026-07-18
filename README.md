@@ -1,83 +1,77 @@
-# Meridian Records — HIPAA-style patient record system (demo)
+# Meridian Records
 
-> **⚠️ All patient data in this application is synthetic.** Every name, date of birth, SSN, diagnosis, and medication entry was invented for demonstration purposes. SSNs use the 900-range, which the Social Security Administration never issues. Do not enter real patient information; this is a public demo.
->
-> This project demonstrates the *technical safeguards* HIPAA asks for (access control, encryption, audit trails). It is **not** a certified or legally HIPAA-compliant system. Real compliance also requires signed Business Associate Agreements with every vendor (Supabase, Railway, Netlify free tiers won't sign one), administrative policies, training, breach procedures, and more.
+A demo patient record system I built to show off the security side of handling health data. Role based access control, actual field level encryption, and an audit log that tracks every single read and write. The clinical features are intentionally basic because that's not the point of the project.
 
-A patient record system focused on secure data handling rather than clinical functionality: role-based access control, application-level field encryption for PHI, and an append-only audit log of every read and write.
+**Important: every patient in here is fake.** All the names, SSNs, diagnoses, everything is made up. The SSNs all start with 900 which is a range the government never actually issues. Please don't type real patient info into this, it's a public demo.
+
+Also to be clear, this demonstrates the technical safeguards HIPAA talks about but it is not actually HIPAA compliant in a legal sense. Real compliance needs signed BAAs with every vendor in the stack, and the free tiers of Supabase and Railway aren't going to sign one. Plus a bunch of admin policy stuff that has nothing to do with code.
 
 ## Stack
 
-- **Backend:** Node + Express, Prisma ORM, Passport (local strategy) + bcrypt + JWT
-- **Database:** Postgres on Supabase
-- **Frontend:** React (Vite), plain CSS
-- **Hardening:** helmet, express-rate-limit, account lockout
+Node + Express backend, Prisma ORM, Postgres on Supabase, React frontend with Vite. Auth is Passport + bcrypt + JWT. Helmet and rate limiting on top.
 
-## Security design
+## The interesting parts
 
-### Role-based access control
+### Roles
 
-Three roles with different permissions on patient records, enforced server-side from a single permission matrix (`server/src/lib/permissions.js`). The frontend hides what a role can't use, but the API is the enforcement point.
+Three roles, each sees and does different things. The whole permission setup lives in one file (`server/src/lib/permissions.js`) and the server enforces it on every request. The frontend hides buttons too but that's cosmetic, the API is what actually says no.
 
-| Action | Admin | Provider | Front desk |
+| | Admin | Provider | Front desk |
 |---|---|---|---|
-| List patients (demographics only) | ✓ | ✓ | ✓ |
-| View SSN | ✓ | | ✓ |
-| View diagnosis / medications | ✓ | ✓ | |
-| Create patient | ✓ | | ✓ |
-| Update demographics + SSN | ✓ | | ✓ |
-| Update clinical fields | ✓ | ✓ | |
-| Delete patient | ✓ | | |
-| View audit logs | ✓ | | |
+| See patient list | yes | yes | yes |
+| See SSN | yes | no | yes |
+| See diagnosis / meds | yes | yes | no |
+| Create patients | yes | no | yes |
+| Edit demographics | yes | no | yes |
+| Edit clinical fields | yes | yes | no |
+| Delete patients | yes | no | no |
+| View audit log | yes | no | no |
 
-Front desk retains SSN access because intake and insurance verification require it; clinical detail is withheld from them instead (minimum necessary standard).
+Why does front desk get SSN but not the provider? Insurance and intake need it, and the provider doesn't. Meanwhile front desk has no business reading your diagnosis. That's the minimum necessary idea from HIPAA, everyone gets what their job requires and nothing extra.
 
-### Field-level encryption
+### Encryption that isn't just "the database does it"
 
-SSN, diagnosis, and medication history are encrypted with **AES-256-GCM in application code** (`server/src/lib/crypto.js`) before they ever reach the database. Each value gets a random IV; ciphertext is stored as `iv:authTag:ciphertext`. The key lives only in the `FIELD_ENCRYPTION_KEY` env var, so what Supabase stores is ciphertext regardless of its own at-rest encryption. Decryption only happens for fields the requesting role is allowed to see: the server never decrypts a value it won't return.
+SSN, diagnosis, and medication history get encrypted with AES-256-GCM in the app code before they're ever sent to the database. Random IV every time, key only exists as an env var. So if you open the Supabase table editor you just see base64 garbage in those columns. Supabase encrypts at rest too but that protects against someone stealing their disks, not against anyone with database access. This protects against both.
 
-### Audit logging
+One rule I stuck to: the server never decrypts a field it isn't going to return. A provider requesting a record doesn't just have the SSN stripped from the response, the SSN ciphertext never gets decrypted at all.
 
-Every access is written to an append-only `AuditLog` table: **reads, not just writes**, plus logins, failed logins, and denied attempts. Each entry records who, what action, which patient, which sensitive fields were decrypted, source IP, and timestamp. The API exposes no update or delete operations on this table, and deleting a patient preserves their audit rows. Admins get a filterable viewer in the UI.
+### The audit log
 
-### Auth
+This is the part that makes the project stand out imo. Every access gets logged. Not just edits, reads too, which is what HIPAA actually expects and what most demo projects skip. Who, what action, which patient, which sensitive fields got decrypted, IP, timestamp. Failed logins and denied attempts get logged as well, so if front desk tries to hit the audit endpoint you'll see a DENIED row with their name on it.
 
-- bcrypt password hashing (cost 12), constant-time-ish handling to avoid user enumeration
-- JWT sessions, 1 hour expiry, verified on every request
-- Account lockout: 15 minutes after 5 failed attempts
-- Login rate limit (10/15min per IP) on top of a global limiter, helmet security headers, strict CORS allowlist
+The table is append only, there's just no API for editing or deleting entries. Deleting a patient keeps their audit history around.
 
-### Documented tradeoffs (things a production system would do differently)
+### Auth details
 
-- No encryption key rotation/versioning
-- No refresh tokens; sessions just expire after an hour
-- JWT stored in localStorage for simplicity; httpOnly cookies would reduce XSS token-theft risk
-- Audit log integrity relies on DB permissions, not cryptographic chaining
+bcrypt at cost 12, JWTs that expire after an hour, accounts lock for 15 minutes after 5 bad passwords. Unknown emails still burn a bcrypt compare so you can't tell which accounts exist by timing. Login endpoint has its own rate limit on top of the global one.
 
-## Local setup
+### Stuff a real system would do that this doesn't
 
-Prereqs: Node 18+, a free [Supabase](https://supabase.com) project.
+Being honest about the cut corners: no key rotation, no refresh tokens, JWT sits in localStorage (httpOnly cookies would be better against XSS), and the audit log's integrity depends on database permissions rather than any cryptographic chaining.
+
+## Running it locally
+
+You need Node 18+ and a free Supabase project.
 
 ```bash
-# 1. Backend
 cd server
 cp .env.example .env
-# Fill in .env:
-#   DATABASE_URL / DIRECT_URL from Supabase > Project Settings > Database
-#   JWT_SECRET:            openssl rand -hex 64
-#   FIELD_ENCRYPTION_KEY:  openssl rand -hex 32   (must be exactly 64 hex chars)
+# fill in .env, the example file explains each value
 npm install
-npm run db:push      # creates tables
-npm run db:seed      # demo users + 10 synthetic patients
-npm run dev          # API on :4000
-
-# 2. Frontend (new terminal)
-cd client
-npm install
-npm run dev          # UI on :5173, /api proxied to :4000
+npm run db:push
+npm run db:seed
+npm run dev
 ```
 
-Demo logins (also shown on the login screen):
+Then in another terminal:
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+Open localhost:5173. The seed gives you three logins, also shown right on the login page:
 
 | Role | Email | Password |
 |---|---|---|
@@ -85,30 +79,24 @@ Demo logins (also shown on the login screen):
 | Provider | provider@demo.clinic | ProviderDemo123! |
 | Front desk | frontdesk@demo.clinic | FrontdeskDemo123! |
 
-Try it: sign in as the provider, open a record (note SSN is hidden), then sign in as admin and watch the audit log fill up, including any DENIED rows if you tried something the role didn't allow.
+Fun demo flow: log in as the provider, open a record, notice the SSN says not visible to your role. Then log in as admin and check the audit page. Everything you just did is in there.
 
-## Deployment
+## Deploying
 
-**Database (Supabase):** create a project, grab both connection strings (pooled on 6543 with `?pgbouncer=true` for `DATABASE_URL`, direct on 5432 for `DIRECT_URL`).
+Database on Supabase, backend on Railway (root directory `server`, start command `npm start`, env vars from your .env plus CORS_ORIGIN set to the frontend URL). Frontend on Netlify (base `client`, build `npm run build`, publish `client/dist`, env var VITE_API_URL pointing at the Railway URL). Run db:push and db:seed once against the prod database from your machine. After both are live, update CORS_ORIGIN on Railway to the real Netlify URL.
 
-**Backend (Railway):** new service from this repo, root directory `server`. Set env vars: `DATABASE_URL`, `DIRECT_URL`, `JWT_SECRET`, `FIELD_ENCRYPTION_KEY`, `CORS_ORIGIN` (your Netlify URL, e.g. `https://your-app.netlify.app`). Start command `npm start`. Run once from a shell or locally against the prod DB: `npm run db:push && npm run db:seed`. Render works identically (web service, root `server`).
-
-**Frontend (Netlify):** new site from the repo, base directory `client`, build command `npm run build`, publish directory `client/dist`. Env var: `VITE_API_URL` = your Railway URL (no trailing slash). The included `public/_redirects` handles SPA routing. Vercel works too: framework Vite, root `client`, same env var.
-
-After deploy, update `CORS_ORIGIN` on the backend to the final frontend URL.
-
-## Project structure
+## Layout
 
 ```
 server/
-  prisma/schema.prisma      data model + audit log
-  prisma/seed.js            demo users, synthetic patients
-  src/lib/crypto.js         AES-256-GCM field encryption
-  src/lib/permissions.js    RBAC matrix (single source of truth)
+  prisma/schema.prisma      models + audit log table
+  prisma/seed.js            fake users and patients
+  src/lib/crypto.js         the AES-256-GCM stuff
+  src/lib/permissions.js    the role matrix
   src/lib/audit.js          audit write helper
-  src/middleware/auth.js    JWT verification, role guard (logs DENIED)
-  src/config/passport.js    local strategy, bcrypt, lockout
-  src/routes/               auth, patients, audit
+  src/middleware/auth.js    JWT check + role guard
+  src/config/passport.js    login, lockout
+  src/routes/
 client/
-  src/pages/                Login, PatientList, PatientDetail, PatientForm, AuditLog
+  src/pages/                the five screens
 ```
