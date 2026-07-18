@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  ADMIN
+  PROVIDER
+  FRONT_DESK
+}
+
+enum AuditAction {
+  LOGIN
+  LOGIN_FAILED
+  LIST
+  READ
+  CREATE
+  UPDATE
+  DELETE
+  DENIED
+}
+
+model User {
+  id             String     @id @default(uuid())
+  email          String     @unique
+  passwordHash   String
+  name           String
+  role           Role
+  failedAttempts Int        @default(0)
+  lockedUntil    DateTime?
+  createdAt      DateTime   @default(now())
+  auditLogs      AuditLog[]
+}
+
+model Patient {
+  id        String   @id @default(uuid())
+  firstName String
+  lastName  String
+  dob       DateTime
+  phone     String
+  email     String?
+  address   String?
+
+  // Sensitive fields: AES-256-GCM ciphertext ("iv:authTag:ciphertext", base64).
+  // Encrypted in application code before it ever reaches the database.
+  ssnEnc               String?
+  diagnosisEnc         String?
+  medicationHistoryEnc String?
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  auditLogs AuditLog[]
+}
+
+// Append-only by design: the API exposes no update or delete operations on this table.
+model AuditLog {
+  id             String      @id @default(uuid())
+  user           User        @relation(fields: [userId], references: [id])
+  userId         String
+  action         AuditAction
+  patient        Patient?    @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  patientId      String?
+  fieldsAccessed String[]    @default([])
+  detail         String?
+  ip             String?
+  timestamp      DateTime    @default(now())
+
+  @@index([userId])
+  @@index([patientId])
+  @@index([timestamp])
+}
