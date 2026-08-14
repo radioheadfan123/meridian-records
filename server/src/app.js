@@ -5,6 +5,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const passport = require('./config/passport');
 const { requireAuth } = require('./middleware/auth');
+const prisma = require('./lib/prisma');
 
 const authRoutes = require('./routes/auth');
 const patientRoutes = require('./routes/patients');
@@ -39,7 +40,16 @@ app.use(
   })
 );
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+// Verifies the app can actually reach Postgres, not just that the process is up -
+// a health check that only proves the event loop is alive isn't worth much to a monitor.
+app.get('/api/health', async (req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, db: 'ok' });
+  } catch (err) {
+    res.status(503).json({ ok: false, db: 'unreachable' });
+  }
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/patients', requireAuth, patientRoutes);
 app.use('/api/audit', requireAuth, auditRoutes);
