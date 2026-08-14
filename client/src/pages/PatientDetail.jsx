@@ -36,16 +36,42 @@ export default function PatientDetail() {
   const nav = useNavigate();
   const { api, user } = useAuth();
   const [patient, setPatient] = useState(null);
+  const [breakGlass, setBreakGlass] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saveError, setSaveError] = useState(null);
+  const [bgOpen, setBgOpen] = useState(false);
+  const [bgReason, setBgReason] = useState('');
+  const [bgError, setBgError] = useState(null);
+  const [bgSubmitting, setBgSubmitting] = useState(false);
 
   const load = useCallback(() => {
-    api(`/patients/${id}`).then((d) => setPatient(d.patient)).catch((e) => setError(e.message));
+    api(`/patients/${id}`)
+      .then((d) => {
+        setPatient(d.patient);
+        setBreakGlass(d.breakGlass);
+      })
+      .catch((e) => setError(e.message));
   }, [api, id]);
 
   useEffect(load, [load]);
+
+  async function requestBreakGlass(e) {
+    e.preventDefault();
+    setBgError(null);
+    setBgSubmitting(true);
+    try {
+      await api(`/patients/${id}/break-glass`, { method: 'POST', body: { reason: bgReason } });
+      setBgOpen(false);
+      setBgReason('');
+      load();
+    } catch (err) {
+      setBgError(err.message);
+    } finally {
+      setBgSubmitting(false);
+    }
+  }
 
   if (error) return <p className="error">{error}</p>;
   if (!patient) return <p className="muted">Opening record… (this access is being logged)</p>;
@@ -116,10 +142,51 @@ export default function PatientDetail() {
             </dl>
           </section>
           <section className="card">
-            <h2>Protected fields</h2>
+            <div className="page-head">
+              <h2>Protected fields</h2>
+              {breakGlass?.active ? null : (
+                <button className="btn btn-ghost btn-sm btn-danger" onClick={() => setBgOpen(!bgOpen)}>
+                  {bgOpen ? 'Cancel' : 'Request emergency access'}
+                </button>
+              )}
+            </div>
+
+            {breakGlass?.active && (
+              <p className="access-note access-note-urgent">
+                Emergency access active until {new Date(breakGlass.expiresAt).toLocaleTimeString()}. Reason on file:
+                &ldquo;{breakGlass.reason}&rdquo;. Every field opened under this grant is logged as BREAK_GLASS for
+                admin review.
+              </p>
+            )}
+
+            {bgOpen && !breakGlass?.active && (
+              <form className="break-glass-form" onSubmit={requestBreakGlass}>
+                <p className="muted small">
+                  Bypasses your role's normal field restrictions. Requires a reason, expires in 15 minutes, and is
+                  logged loudly for admin review.
+                </p>
+                <label>
+                  Reason for emergency access
+                  <textarea
+                    value={bgReason}
+                    onChange={(e) => setBgReason(e.target.value)}
+                    minLength={10}
+                    required
+                    rows={2}
+                  />
+                </label>
+                {bgError && <p className="error" role="alert">{bgError}</p>}
+                <div className="form-actions">
+                  <button className="btn btn-danger" type="submit" disabled={bgSubmitting}>
+                    {bgSubmitting ? 'Requesting…' : 'Confirm emergency access'}
+                  </button>
+                </div>
+              </form>
+            )}
+
             <div className="sealed-grid">
               {SENSITIVE.map((f) => (
-                <SealedField key={f.key} label={f.label} value={patient[f.key]} canView={perms.viewFields.includes(f.key)} />
+                <SealedField key={f.key} label={f.label} value={patient[f.key]} canView={patient[f.key] !== undefined} />
               ))}
             </div>
           </section>

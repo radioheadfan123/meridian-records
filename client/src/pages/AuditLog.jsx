@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../AuthContext';
 
-const ACTIONS = ['', 'LOGIN', 'LOGIN_FAILED', 'LIST', 'READ', 'CREATE', 'UPDATE', 'DELETE', 'DENIED'];
+const ACTIONS = ['', 'LOGIN', 'LOGIN_FAILED', 'LIST', 'READ', 'CREATE', 'UPDATE', 'DELETE', 'DENIED', 'BREAK_GLASS'];
 
 export default function AuditLog() {
   const { api } = useAuth();
@@ -32,7 +32,8 @@ export default function AuditLog() {
         </div>
       </div>
       <p className="muted small">
-        Append-only record of every access. {data.total} entries. Reads are logged, not just writes, and DENIED rows show blocked attempts.
+        Append-only record of every access. {data.total} entries. Reads are logged, not just writes, DENIED rows
+        show blocked attempts, and BREAK_GLASS rows show emergency overrides that need review.
       </p>
       <table className="table audit-table">
         <thead>
@@ -40,7 +41,16 @@ export default function AuditLog() {
         </thead>
         <tbody>
           {data.logs.map((l) => (
-            <tr key={l.id} className={l.action === 'DENIED' || l.action === 'LOGIN_FAILED' ? 'row-denied' : ''}>
+            <tr
+              key={l.id}
+              className={
+                l.action === 'BREAK_GLASS'
+                  ? 'row-breakglass'
+                  : l.action === 'DENIED' || l.action === 'LOGIN_FAILED'
+                  ? 'row-denied'
+                  : ''
+              }
+            >
               <td className="mono small">{new Date(l.timestamp).toLocaleString()}</td>
               <td>{l.user.name}<div className="muted small">{l.user.role}</div></td>
               <td><span className={`action-chip action-${l.action}`}>{l.action}</span></td>

@@ -13,6 +13,8 @@ const ENC_COLUMN = {
   medicationHistory: 'medicationHistoryEnc',
 };
 
+const BREAK_GLASS_MINUTES = 15;
+
 function demographics(p) {
   return {
     id: p.id,
@@ -38,14 +40,21 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// GET /api/patients/:id — sensitive fields are decrypted only if the role may view them.
+// GET /api/patients/:id — sensitive fields are decrypted only if the role may view them,
+// unless the requester holds an active break-glass grant for this patient, in which case
+// every sensitive field unlocks and the read itself is logged as BREAK_GLASS, not READ.
 // The rule: never decrypt what you won't return.
 router.get('/:id', async (req, res, next) => {
   try {
     const patient = await prisma.patient.findUnique({ where: { id: req.params.id } });
     if (!patient) return res.status(404).json({ error: 'Patient not found' });
 
-    const viewable = PERMISSIONS[req.user.role].viewFields;
+    const grant = await prisma.breakGlassGrant.findFirst({
+      where: { userId: req.user.id, patientId: patient.id, expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: 'desc' },
+    });
+
+    const viewable = grant ? SENSITIVE_FIELDS : PERMISSIONS[req.user.role].viewFields;
     const result = demographics(patient);
     const decrypted = [];
 
@@ -58,12 +67,50 @@ router.get('/:id', async (req, res, next) => {
 
     await audit({
       userId: req.user.id,
-      action: 'READ',
+      action: grant ? 'BREAK_GLASS' : 'READ',
       patientId: patient.id,
       fieldsAccessed: decrypted,
+      detail: grant ? `read under active emergency access grant (reason: ${grant.reason})` : null,
       req,
     });
-    res.json({ patient: result });
+    res.json({
+      patient: result,
+      breakGlass: grant ? { active: true, reason: grant.reason, expiresAt: grant.expiresAt } : null,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/patients/:id/break-glass — any authenticated role. Emergency override: a
+// mandatory reason, a short time-limited grant, and a loud BREAK_GLASS audit entry so
+// admins can review every use. This bypasses the normal field allowlist by design —
+// accountability (the reason + audit trail), not restriction, is the safeguard here.
+router.post('/:id/break-glass', async (req, res, next) => {
+  try {
+    const patient = await prisma.patient.findUnique({ where: { id: req.params.id } });
+    if (!patient) return res.status(404).json({ error: 'Patient not found' });
+
+    const reason = (req.body.reason || '').trim();
+    if (reason.length < 10) {
+      return res.status(400).json({ error: 'A reason of at least 10 characters is required for emergency access' });
+    }
+
+    const expiresAt = new Date(Date.now() + BREAK_GLASS_MINUTES * 60 * 1000);
+    const grant = await prisma.breakGlassGrant.create({
+      data: { userId: req.user.id, patientId: patient.id, reason, expiresAt },
+    });
+
+    await audit({
+      userId: req.user.id,
+      action: 'BREAK_GLASS',
+      patientId: patient.id,
+      fieldsAccessed: SENSITIVE_FIELDS,
+      detail: `emergency access granted for ${BREAK_GLASS_MINUTES} min, reason: ${reason}`,
+      req,
+    });
+
+    res.status(201).json({ grant: { id: grant.id, expiresAt: grant.expiresAt, reason: grant.reason } });
   } catch (err) {
     next(err);
   }

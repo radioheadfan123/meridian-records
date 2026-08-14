@@ -15,6 +15,10 @@ jest.mock('../lib/prisma', () => ({
     count: jest.fn(),
     findMany: jest.fn(),
   },
+  breakGlassGrant: {
+    findFirst: jest.fn(),
+    create: jest.fn(),
+  },
 }));
 
 const request = require('supertest');
@@ -158,5 +162,68 @@ describe('GET /:id — field-level redaction', () => {
     expect(res.body.patient.ssn).toBe('900-11-2222');
     expect(res.body.patient.diagnosis).toBe('Type 2 diabetes');
     expect(res.body.patient.medicationHistory).toBe('Metformin 500mg');
+  });
+});
+
+describe('POST /:id/break-glass — emergency access', () => {
+  test('rejects a missing reason with 400 and creates no grant', async () => {
+    prisma.patient.findUnique.mockResolvedValue(fakePatient());
+    const res = await request(app).post('/api/patients/patient-1/break-glass').set(auth('PROVIDER')).send({});
+    expect(res.status).toBe(400);
+    expect(prisma.breakGlassGrant.create).not.toHaveBeenCalled();
+  });
+
+  test('rejects a too-short reason with 400', async () => {
+    prisma.patient.findUnique.mockResolvedValue(fakePatient());
+    const res = await request(app)
+      .post('/api/patients/patient-1/break-glass')
+      .set(auth('PROVIDER'))
+      .send({ reason: 'why not' });
+    expect(res.status).toBe(400);
+    expect(prisma.breakGlassGrant.create).not.toHaveBeenCalled();
+  });
+
+  test('a valid reason creates a time-limited grant and a loud BREAK_GLASS audit row', async () => {
+    prisma.patient.findUnique.mockResolvedValue(fakePatient());
+    prisma.breakGlassGrant.create.mockResolvedValue({
+      id: 'grant-1',
+      reason: 'patient unresponsive in ER, need med history now',
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    const res = await request(app)
+      .post('/api/patients/patient-1/break-glass')
+      .set(auth('PROVIDER'))
+      .send({ reason: 'patient unresponsive in ER, need med history now' });
+
+    expect(res.status).toBe(201);
+    expect(prisma.breakGlassGrant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ patientId: 'patient-1', reason: 'patient unresponsive in ER, need med history now' }),
+      })
+    );
+    expect(prisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ action: 'BREAK_GLASS', patientId: 'patient-1' }) })
+    );
+  });
+
+  test('GET /:id under an active grant unlocks every sensitive field and logs BREAK_GLASS, not READ', async () => {
+    prisma.patient.findUnique.mockResolvedValue(fakePatient());
+    prisma.breakGlassGrant.findFirst.mockResolvedValue({
+      id: 'grant-1',
+      reason: 'emergency override',
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+    });
+
+    const res = await request(app).get('/api/patients/patient-1').set(auth('PROVIDER'));
+
+    expect(res.status).toBe(200);
+    expect(res.body.patient.ssn).toBe('900-11-2222'); // normally hidden from PROVIDER
+    expect(res.body.breakGlass).toEqual(
+      expect.objectContaining({ active: true, reason: 'emergency override' })
+    );
+    expect(prisma.auditLog.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ action: 'BREAK_GLASS' }) })
+    );
   });
 });

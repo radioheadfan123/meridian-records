@@ -23,18 +23,20 @@ enum AuditAction {
   UPDATE
   DELETE
   DENIED
+  BREAK_GLASS
 }
 
 model User {
-  id             String     @id @default(uuid())
-  email          String     @unique
-  passwordHash   String
-  name           String
-  role           Role
-  failedAttempts Int        @default(0)
-  lockedUntil    DateTime?
-  createdAt      DateTime   @default(now())
-  auditLogs      AuditLog[]
+  id               String            @id @default(uuid())
+  email            String            @unique
+  passwordHash     String
+  name             String
+  role             Role
+  failedAttempts   Int               @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime          @default(now())
+  auditLogs        AuditLog[]
+  breakGlassGrants BreakGlassGrant[]
 }
 
 model Patient {
@@ -52,9 +54,10 @@ model Patient {
   diagnosisEnc         String?
   medicationHistoryEnc String?
 
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  auditLogs AuditLog[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  auditLogs        AuditLog[]
+  breakGlassGrants BreakGlassGrant[]
 }
 
 // Append-only by design: the API exposes no update or delete operations on this table.
@@ -73,4 +76,20 @@ model AuditLog {
   @@index([userId])
   @@index([patientId])
   @@index([timestamp])
+}
+
+// Time-limited emergency access. A grant does not itself grant access silently:
+// every read taken under it is logged as BREAK_GLASS, not READ, so it stays
+// loud for the admin audit review this feature exists for.
+model BreakGlassGrant {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  patient   Patient  @relation(fields: [patientId], references: [id])
+  patientId String
+  reason    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId, patientId, expiresAt])
 }

@@ -89,12 +89,13 @@ main { flex: 1; width: min(1060px, 100%); margin: 0 auto; padding: 1.5rem 1.25re
 .btn-danger:hover { background: var(--red-soft); }
 .btn-sm { padding: 0.2rem 0.6rem; font-size: 0.8rem; }
 
-input, select {
+input, select, textarea {
   font: inherit; padding: 0.45rem 0.6rem; border: 1px solid var(--rule);
   border-radius: 4px; background: white; width: 100%;
 }
+textarea { resize: vertical; }
 label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.85rem; }
-label input, label select { margin-top: 0.25rem; }
+label input, label select, label textarea { margin-top: 0.25rem; }
 .search { width: 220px; }
 
 /* Page scaffolding */
@@ -109,6 +110,15 @@ label input, label select { margin-top: 0.25rem; }
   font-size: 0.82rem; color: var(--amber); background: var(--amber-soft);
   border-left: 3px solid var(--amber); padding: 0.4rem 0.7rem; border-radius: 0 4px 4px 0;
 }
+.access-note-urgent {
+  color: var(--red); background: var(--red-soft); border-left-color: var(--red);
+  font-weight: 600; margin-bottom: 0.9rem;
+}
+.break-glass-form {
+  border: 1px solid var(--red); background: var(--red-soft); border-radius: 6px;
+  padding: 0.8rem 0.9rem; margin-bottom: 0.9rem;
+}
+.break-glass-form label { margin-bottom: 0.5rem; }
 
 /* Tables */
 .table { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--rule); border-radius: 6px; }
@@ -151,7 +161,9 @@ label input, label select { margin-top: 0.25rem; }
 }
 .action-DENIED, .action-LOGIN_FAILED { background: var(--red-soft); color: var(--red); }
 .action-DELETE { background: var(--red-soft); color: var(--red); }
+.action-BREAK_GLASS { background: var(--red); color: white; font-weight: 700; }
 .action-CREATE, .action-UPDATE { background: var(--amber-soft); color: var(--amber); }
+.row-breakglass { background: var(--red-soft); }
 .pager { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; }
 
 /* Login */
