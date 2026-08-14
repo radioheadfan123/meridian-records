@@ -29,11 +29,15 @@ Three roles, each sees and does different things. The whole permission setup liv
 
 Why does front desk get SSN but not the provider? Insurance and intake need it, and the provider doesn't. Meanwhile front desk has no business reading your diagnosis. That's the minimum necessary idea from HIPAA, everyone gets what their job requires and nothing extra.
 
+There's also a break the glass option for emergencies. Any role can request temporary access to a patient with a reason, it opens every field for 15 minutes, and it's loud about it: every read under that grant shows up in the audit log as BREAK_GLASS instead of a normal READ, reason attached. Real hospitals bias toward giving people access and catching misuse after the fact, because locking someone out during an actual emergency is worse than a false alarm, and this is meant to mirror that.
+
 ### Encryption that isn't just "the database does it"
 
 SSN, diagnosis, and medication history get encrypted with AES-256-GCM in the app code before they're ever sent to the database. Random IV every time, key only exists as an env var. So if you open the Supabase table editor you just see base64 garbage in those columns. Supabase encrypts at rest too but that protects against someone stealing their disks, not against anyone with database access. This protects against both.
 
 One rule I stuck to: the server never decrypts a field it isn't going to return. A provider requesting a record doesn't just have the SSN stripped from the response, the SSN ciphertext never gets decrypted at all.
+
+Keys can rotate too. `FIELD_ENCRYPTION_KEY` is version 1 and never has to change. Adding `FIELD_ENCRYPTION_KEY_V2` alongside it makes every new write use the new key immediately, old data stays readable under whichever key it was actually written with, and a script re-encrypts the old rows once you're ready to fully retire the old one.
 
 ### The audit log
 
@@ -41,13 +45,15 @@ This is the part that makes the project stand out imo. Every access gets logged.
 
 The table is append only, there's just no API for editing or deleting entries. Deleting a patient keeps their audit history around.
 
+Each entry also hashes the one before it, so it's not just append only by API design, it's tamper evident. `/api/audit/verify` (admin only) walks the chain and would catch a row edited directly in the database. Building this taught me something the hard way: my first version used a Postgres advisory lock to keep concurrent writers from corrupting the chain, and a real load test proved that lock doesn't actually hold through Supabase's connection pooler. Swapped it for a database uniqueness constraint plus a retry loop instead, which turned out to be the more correct answer anyway, not just a workaround.
+
 ### Auth details
 
 bcrypt at cost 12, JWTs that expire after an hour, accounts lock for 15 minutes after 5 bad passwords. Unknown emails still burn a bcrypt compare so you can't tell which accounts exist by timing. Login endpoint has its own rate limit on top of the global one.
 
 ### Stuff a real system would do that this doesn't
 
-Being honest about the cut corners: no key rotation, no refresh tokens, JWT sits in localStorage (httpOnly cookies would be better against XSS), and the audit log's integrity depends on database permissions rather than any cryptographic chaining.
+Being honest about the cut corners: no refresh tokens, JWT sits in localStorage (httpOnly cookies would be better against XSS), and front desk's SSN access is all or nothing instead of the scoped scheduling view a real system would use.
 
 ## Running it locally
 
@@ -79,7 +85,9 @@ Open localhost:5173. The seed gives you three logins, also shown right on the lo
 | Provider | provider@demo.clinic | ProviderDemo123! |
 | Front desk | frontdesk@demo.clinic | FrontdeskDemo123! |
 
-Fun demo flow: log in as the provider, open a record, notice the SSN says not visible to your role. Then log in as admin and check the audit page. Everything you just did is in there.
+Fun demo flow: log in as the provider, open a record, notice the SSN says not visible to your role. Try requesting emergency access to see it anyway (with a reason). Then log in as admin and check the audit page. Everything you just did is in there, including the break-glass entry.
+
+Tests live in `server/src/__tests__` (`npm test`, 40+ across five files) and run in CI on every push.
 
 ## Deploying
 
@@ -91,12 +99,15 @@ Database on Supabase, backend on Railway (root directory `server`, start command
 server/
   prisma/schema.prisma      models + audit log table
   prisma/seed.js            fake users and patients
-  src/lib/crypto.js         the AES-256-GCM stuff
+  scripts/                  one-time ops scripts (audit backfill, key re-encrypt)
+  src/lib/crypto.js         the AES-256-GCM stuff, versioned for key rotation
   src/lib/permissions.js    the role matrix
-  src/lib/audit.js          audit write helper
+  src/lib/audit.js          audit write helper, hash-chained
+  src/lib/auditHash.js      the hash chain itself
   src/middleware/auth.js    JWT check + role guard
   src/config/passport.js    login, lockout
   src/routes/
+  src/__tests__/
 client/
   src/pages/                the five screens
 ```

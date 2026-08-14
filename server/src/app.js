@@ -11,11 +11,18 @@ const authRoutes = require('./routes/auth');
 const patientRoutes = require('./routes/patients');
 const auditRoutes = require('./routes/audit');
 
-for (const v of ['DATABASE_URL', 'JWT_SECRET', 'FIELD_ENCRYPTION_KEY']) {
+for (const v of ['DATABASE_URL', 'JWT_SECRET']) {
   if (!process.env[v]) {
     console.error(`Missing required env var: ${v}`);
     process.exit(1);
   }
+}
+
+// At least one field-encryption key must be present: FIELD_ENCRYPTION_KEY (version 1,
+// unchanged from before key rotation existed) or any FIELD_ENCRYPTION_KEY_V<n>.
+if (!process.env.FIELD_ENCRYPTION_KEY && !Object.keys(process.env).some((k) => /^FIELD_ENCRYPTION_KEY_V\d+$/.test(k))) {
+  console.error('Missing required env var: FIELD_ENCRYPTION_KEY (or FIELD_ENCRYPTION_KEY_V<n>)');
+  process.exit(1);
 }
 
 const app = express();
