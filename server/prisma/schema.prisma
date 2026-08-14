@@ -73,6 +73,17 @@ model AuditLog {
   ip             String?
   timestamp      DateTime    @default(now())
 
+  // Hash chain for tamper-evidence: hash = sha256(prevHash + this row's fields).
+  // Nullable because rows written before this feature existed have neither; the
+  // backfill script (scripts/backfill-audit-hashes.js) chains them retroactively.
+  prevHash String?
+  hash     String?
+
+  // The real guarantee against a forked chain: at most one row may claim a given
+  // prevHash, enforced by Postgres on every insert regardless of what the app layer
+  // does. (Multiple NULLs are allowed by Postgres unique-index semantics, which is
+  // exactly right for the not-yet-backfilled rows that predate this feature.)
+  @@unique([prevHash])
   @@index([userId])
   @@index([patientId])
   @@index([timestamp])

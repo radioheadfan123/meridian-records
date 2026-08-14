@@ -14,6 +14,7 @@ jest.mock('../lib/prisma', () => ({
     create: jest.fn(),
     count: jest.fn(),
     findMany: jest.fn(),
+    findFirst: jest.fn(),
   },
   breakGlassGrant: {
     findFirst: jest.fn(),
