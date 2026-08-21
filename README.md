@@ -1,5 +1,7 @@
 # Meridian Records
 
+https://meridian-records.netlify.app/
+
 A demo patient record system I built to show off the security side of handling health data. Role based access control, actual field level encryption, and an audit log that tracks every single read and write. The clinical features are intentionally basic because that's not the point of the project.
 
 **Important: every patient in here is fake.** All the names, SSNs, diagnoses, everything is made up. The SSNs all start with 900 which is a range the government never actually issues. Please don't type real patient info into this, it's a public demo.
