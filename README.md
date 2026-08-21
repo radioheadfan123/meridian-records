@@ -51,6 +51,16 @@ Each entry also hashes the one before it, so it's not just append only by API de
 
 bcrypt at cost 12, JWTs that expire after an hour, accounts lock for 15 minutes after 5 bad passwords. Unknown emails still burn a bcrypt compare so you can't tell which accounts exist by timing. Login endpoint has its own rate limit on top of the global one.
 
+### Closing the back door Supabase leaves open
+
+Worth writing down because it's the thing that's easy to miss. This app never uses `supabase-js`. The React client only talks to the Express API, and Prisma connects straight to Postgres as the owner role, so every request goes through the permission checks. But Supabase separately exposes every table in the `public` schema over PostgREST at `https://<project>.supabase.co/rest/v1/`, and anyone holding the anon key can read them there without touching my server at all.
+
+The encrypted columns would have held up (SSN, diagnosis and meds come back as base64 ciphertext no matter which door you come in). Everything else wouldn't have: patient names, dates of birth, the `User` table with its bcrypt hashes, and the entire audit log.
+
+`server/prisma/rls.sql` shuts it. RLS on all four tables plus the anon and authenticated grants revoked, so PostgREST won't even build a route. It's `ENABLE ROW LEVEL SECURITY`, not `FORCE`, and that distinction is the whole trick: RLS doesn't apply to a table's owner, which is what Prisma connects as, so the app carries on unchanged while everyone else gets default-deny. Using `FORCE` here would apply RLS to the owner too and, with no policies written, lock the application out of its own database.
+
+No policies exist on purpose. Authorization for this app lives in `permissions.js` where it can express things like "front desk sees SSN but not diagnosis"; per-row SQL policies would be a second copy of that logic, out of sync the first time one of them changed.
+
 ### Stuff a real system would do that this doesn't
 
 Being honest about the cut corners: no refresh tokens, JWT sits in localStorage (httpOnly cookies would be better against XSS), and front desk's SSN access is all or nothing instead of the scoped scheduling view a real system would use.
