@@ -31,12 +31,30 @@ router.get('/', requireRole('ADMIN'), async (req, res, next) => {
         take: pageSize,
         include: {
           user: { select: { id: true, name: true, email: true, role: true } },
-          patient: { select: { id: true, firstName: true, lastName: true } },
         },
       }),
     ]);
 
-    res.json({ logs, total, page, pageSize });
+    // patientId is no longer a foreign key (see schema.prisma: an append-only,
+    // tamper-evident row must not hold a reference another operation can rewrite),
+    // so the patient name is resolved here instead of joined. Ids that no longer
+    // resolve belong to deleted patients - the audit row deliberately keeps the id
+    // anyway, and the DELETE row's own detail text carries the name.
+    const ids = [...new Set(logs.map((l) => l.patientId).filter(Boolean))];
+    const patients = ids.length
+      ? await prisma.patient.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+    const byId = new Map(patients.map((p) => [p.id, p]));
+
+    res.json({
+      logs: logs.map((l) => ({ ...l, patient: l.patientId ? byId.get(l.patientId) ?? null : null })),
+      total,
+      page,
+      pageSize,
+    });
   } catch (err) {
     next(err);
   }

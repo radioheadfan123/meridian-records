@@ -79,7 +79,6 @@ model Patient {
 
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
-  auditLogs        AuditLog[]
   breakGlassGrants BreakGlassGrant[]
   appointments     Appointment[]
 }
@@ -129,7 +128,21 @@ model AuditLog {
   user           User        @relation(fields: [userId], references: [id])
   userId         String
   action         AuditAction
-  patient        Patient?    @relation(fields: [patientId], references: [id], onDelete: SetNull)
+
+  // Deliberately NOT a foreign key.
+  //
+  // This used to be `patient Patient? @relation(..., onDelete: SetNull)`, and that
+  // quietly defeated the hash chain below: deleting a patient rewrote patientId to
+  // NULL on every audit row that referenced them, and since the hash covers
+  // patientId, /api/audit/verify then correctly reported those rows as tampered.
+  // Two features that are each right on their own, contradicting each other - an
+  // append-only table cannot hold a reference that some other operation is allowed
+  // to mutate. Found 2026-09-02 by running verify after a patient deletion, which
+  // nothing had done before.
+  //
+  // A deleted patient's id is a historical fact and the log's job is to keep it, so
+  // the id now stays put and nothing can rewrite it. The cost is that the audit
+  // route resolves patient names with its own lookup instead of a join.
   patientId      String?
   fieldsAccessed String[]    @default([])
   detail         String?

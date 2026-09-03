@@ -242,4 +242,44 @@ describe('GET /api/audit/verify', () => {
     const res = await request(app).get('/api/audit/verify').set(auth('PROVIDER'));
     expect(res.status).toBe(403);
   });
+
+  // Regression guard for the bug found 2026-09-02. AuditLog.patientId used to be a
+  // foreign key with onDelete: SetNull, so deleting a patient silently rewrote
+  // patientId to NULL on their audit rows. The hash covers patientId, so verify then
+  // reported real tampering that nobody had done.
+  //
+  // This is asserted against the schema text rather than through the API because the
+  // damage happens inside Postgres, on a table the app never updates - there is no
+  // application code path a mocked-Prisma test could exercise to catch it. The schema
+  // IS the guarantee here, so the schema is what gets checked.
+  // Comments are stripped before asserting: the model carries a long comment that
+  // explains the old bug and therefore contains the words "SetNull" and "@relation".
+  // Matching prose instead of code is how a guard like this quietly stops guarding.
+  function auditModelCode() {
+    const fs = require('fs');
+    const path = require('path');
+    const schema = fs.readFileSync(path.join(__dirname, '../../prisma/schema.prisma'), 'utf8');
+    return schema
+      .match(/model AuditLog \{[\s\S]*?\n\}/)[0]
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('//'))
+      .join('\n');
+  }
+
+  test('patientId is not a mutable foreign key, or a deletion would rewrite history', () => {
+    const code = auditModelCode();
+
+    expect(code).toMatch(/patientId\s+String\?/);
+    // No relation field pointing at Patient. The `user` relation is left alone on
+    // purpose: it carries no cascading action, so a delete is refused rather than
+    // silently rewriting a hashed row.
+    expect(code).not.toMatch(/patient\s+Patient/);
+    expect(code).not.toMatch(/references:\s*\[id\][^)]*\)\s*\/\/?\s*$|Patient/);
+  });
+
+  test('no cascading delete action may touch a hashed row', () => {
+    // If a future change adds one, the chain silently starts lying about tampering.
+    // Cheap to assert, expensive to discover.
+    expect(auditModelCode()).not.toMatch(/onDelete:\s*(SetNull|Cascade|SetDefault)/);
+  });
 });

@@ -63,6 +63,8 @@ This is the part that makes the project stand out imo. Every access gets logged.
 
 The table is append only, there's just no API for editing or deleting entries. Deleting a patient keeps their audit history around.
 
+That last part had a bug in it that I only found by running the verify endpoint after deleting a patient, which nothing had ever done before. `patientId` on the audit table used to be a foreign key set to null on delete, so removing a patient quietly rewrote that column on every audit row that mentioned them. The hash covers `patientId`, so verify started reporting those rows as tampered, and it was right to: they really had been modified after they were written. Nobody tampered with anything, two features that were each fine on their own just contradicted each other. An append only table cannot hold a reference that some other operation is allowed to rewrite. So the foreign key is gone, the id is stored as a plain value that nothing can touch, and the audit view resolves patient names with its own lookup instead. A deleted patient's id is a historical fact and the log's job is to keep it.
+
 Each entry also hashes the one before it, so it's not just append only by API design, it's tamper evident. `/api/audit/verify` (admin only) walks the chain and would catch a row edited directly in the database. Building this taught me something the hard way: my first version used a Postgres advisory lock to keep concurrent writers from corrupting the chain, and a real load test proved that lock doesn't actually hold through Supabase's connection pooler. Swapped it for a database uniqueness constraint plus a retry loop instead, which turned out to be the more correct answer anyway, not just a workaround.
 
 ### Auth details
