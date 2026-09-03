@@ -199,3 +199,33 @@ label input, label select, label textarea { margin-top: 0.25rem; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Scheduling: the scoped view. Visually a plain operational list on purpose -
+   it should not look like the amber "protected field" treatment, because the
+   point is that this is the non-clinical slice. */
+.appt {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line, #e2e2df);
+}
+.appt:first-of-type { border-top: none; }
+.appt-main { display: flex; flex-direction: column; gap: 0.15rem; }
+.appt-when { font-size: 0.9rem; }
+.appt-type { font-weight: 600; }
+.appt-reason { font-size: 0.92rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.appt-side { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+.appt-status {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.appt-status-scheduled { color: #3a6ea5; }
+.appt-status-checked_in { color: #1f7a4d; }
+.appt-status-completed { color: #6b6b66; }
+.appt-status-cancelled, .appt-status-no_show { color: #a33; }

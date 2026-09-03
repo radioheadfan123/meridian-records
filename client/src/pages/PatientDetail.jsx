@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
+import Scheduling from './Scheduling';
 
 const SENSITIVE = [
   { key: 'ssn', label: 'SSN' },
@@ -190,6 +191,7 @@ export default function PatientDetail() {
               ))}
             </div>
           </section>
+          <Scheduling patientId={id} />
         </>
       )}
 

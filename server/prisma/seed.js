@@ -56,6 +56,45 @@ async function main() {
     }
   }
 
+  // A few appointments so the scheduling view has something to show. Reasons are
+  // deliberately written as scheduling notes, not diagnoses: that distinction is
+  // what the front desk is allowed to see, and a seed full of clinical text would
+  // quietly undermine the feature it is demonstrating.
+  const apptCount = await prisma.appointment.count();
+  if (apptCount === 0) {
+    const patients = await prisma.patient.findMany({ orderBy: { lastName: 'asc' }, take: 6 });
+    const provider = await prisma.user.findFirst({ where: { role: 'PROVIDER' } });
+    const VISITS = [
+      ['FOLLOW_UP', 'follow-up on last visit', 1, 30],
+      ['ANNUAL_PHYSICAL', 'yearly wellness check', 2, 45],
+      ['LAB_REVIEW', 'review recent lab results', 3, 20],
+      ['VACCINATION', 'seasonal vaccination', 4, 15],
+      ['TELEHEALTH', 'video check-in, no travel needed', 7, 20],
+      ['NEW_PATIENT', 'new patient intake and paperwork', 8, 60],
+    ];
+
+    const base = new Date();
+    base.setHours(9, 0, 0, 0);
+
+    for (let i = 0; i < patients.length; i++) {
+      const [visitType, reason, dayOffset, durationMinutes] = VISITS[i];
+      const startsAt = new Date(base);
+      startsAt.setDate(startsAt.getDate() + dayOffset);
+      startsAt.setHours(9 + i, 0, 0, 0);
+
+      await prisma.appointment.create({
+        data: {
+          patientId: patients[i].id,
+          providerId: provider ? provider.id : null,
+          visitType,
+          reasonEnc: encryptField(reason),
+          startsAt,
+          durationMinutes,
+        },
+      });
+    }
+  }
+
   console.log('Seeded. Demo logins:');
   USERS.forEach((u) => console.log(`  ${u.role.padEnd(11)} ${u.email} / ${u.password}`));
 }

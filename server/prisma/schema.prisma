@@ -26,6 +26,28 @@ enum AuditAction {
   BREAK_GLASS
 }
 
+// Coarse scheduling category. Deliberately NOT encrypted: it is the operational
+// data the calendar is built on (filtering, slot length, room assignment), and it
+// is a fixed vocabulary rather than free text about the patient. The free-text
+// reason that sits beside it IS encrypted - that is where the line falls.
+enum VisitType {
+  NEW_PATIENT
+  FOLLOW_UP
+  ANNUAL_PHYSICAL
+  LAB_REVIEW
+  VACCINATION
+  TELEHEALTH
+  URGENT
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
 model User {
   id               String            @id @default(uuid())
   email            String            @unique
@@ -37,6 +59,7 @@ model User {
   createdAt        DateTime          @default(now())
   auditLogs        AuditLog[]
   breakGlassGrants BreakGlassGrant[]
+  appointments     Appointment[]
 }
 
 model Patient {
@@ -58,6 +81,46 @@ model Patient {
   updatedAt        DateTime          @updatedAt
   auditLogs        AuditLog[]
   breakGlassGrants BreakGlassGrant[]
+  appointments     Appointment[]
+}
+
+// The scoped scheduling view. This model exists to replace a simplification the
+// README called out: access used to be a binary field block, so front desk saw
+// either the whole clinical record or none of it, and "none of it" is not enough
+// to run a calendar. An appointment carries the minimum necessary to schedule -
+// a visit category, a short scheduling reason, a time - and nothing more.
+//
+// `reasonEnc` is NOT the diagnosis. It is a purpose-limited scheduling note
+// ("follow-up on lab results") written for the front desk, while diagnosisEnc
+// stays clinical and stays invisible to them. Two fields, two purposes, two
+// audiences: that distinction is the whole point of the feature.
+model Appointment {
+  id        String  @id @default(uuid())
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+
+  // The clinician the visit is with. Nullable so front desk can book a slot
+  // before assignment, which is how real intake actually works.
+  provider   User?   @relation(fields: [providerId], references: [id])
+  providerId String?
+
+  visitType VisitType
+
+  // Free text about a patient, so it gets the same AES-256-GCM treatment as every
+  // other free-text PHI field in this app. Being scheduling-scoped does not make
+  // it less sensitive at rest; it only changes who is allowed to read it.
+  reasonEnc String?
+
+  startsAt        DateTime
+  durationMinutes Int               @default(30)
+  status          AppointmentStatus @default(SCHEDULED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([startsAt])
+  @@index([providerId, startsAt])
 }
 
 // Append-only by design: the API exposes no update or delete operations on this table.

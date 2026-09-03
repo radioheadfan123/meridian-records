@@ -28,8 +28,24 @@ Three roles, each sees and does different things. The whole permission setup liv
 | Edit clinical fields | yes | yes | no |
 | Delete patients | yes | no | no |
 | View audit log | yes | no | no |
+| See appointments | yes | yes | yes |
+| Book / reschedule | yes | no | yes |
+| Cancel | yes | no | yes |
+| Check in / complete | yes | yes | yes |
 
 Why does front desk get SSN but not the provider? Insurance and intake need it, and the provider doesn't. Meanwhile front desk has no business reading your diagnosis. That's the minimum necessary idea from HIPAA, everyone gets what their job requires and nothing extra.
+
+### The scheduling view, and why it exists
+
+For a while this README admitted a real weakness: front desk access was all or nothing per field, so they either saw the clinical record or they saw nothing. That sounds strict but it's actually the wrong shape. A receptionist genuinely needs to know *something* about why you're coming in, otherwise they can't book the right length of slot or route you to the right clinician. Blocking the whole chart doesn't protect anyone, it just means the real system grows a workaround.
+
+So appointments are their own thing now. An appointment holds a visit type, a short scheduling reason, a time, a duration, and a status. Front desk owns that: they book, reschedule, cancel, and they can read the reason. They still cannot see a diagnosis or a medication history, and nothing on the scheduling screen is clinical.
+
+The distinction I care about is between `reason` and `diagnosis`. "Follow-up on lab results" is a scheduling note, written for whoever runs the calendar. "Type 2 diabetes" is a clinical record. They're different fields with different audiences, and putting them in different tables with different permissions is what makes minimum necessary mean something instead of being a slogan. There's a 200 character cap on the reason too, which is partly a guard against that field quietly turning into a chart note over time.
+
+The reason is still encrypted the same way as everything else, because it's free text about a patient. Being scheduling scoped changes who can read it, not how sensitive it is at rest.
+
+Providers deliberately can't book or cancel. The front desk owns the calendar. Providers move a visit through its states, checked in, completed, no show, since that part actually is theirs. Every one of those transitions is audited with the before and after status, not just "something changed".
 
 There's also a break the glass option for emergencies. Any role can request temporary access to a patient with a reason, it opens every field for 15 minutes, and it's loud about it: every read under that grant shows up in the audit log as BREAK_GLASS instead of a normal READ, reason attached. Real hospitals bias toward giving people access and catching misuse after the fact, because locking someone out during an actual emergency is worse than a false alarm, and this is meant to mirror that.
 
@@ -65,7 +81,9 @@ No policies exist on purpose. Authorization for this app lives in `permissions.j
 
 ### Stuff a real system would do that this doesn't
 
-Being honest about the cut corners: no refresh tokens, JWT sits in localStorage (httpOnly cookies would be better against XSS), and front desk's SSN access is all or nothing instead of the scoped scheduling view a real system would use.
+Being honest about the cut corners: no refresh tokens, and the JWT sits in localStorage (httpOnly cookies would be better against XSS).
+
+Double booking is checked in application code, not in the database, so two people booking the same provider at the same instant could both slip through. The proper fix is a Postgres exclusion constraint over the provider and the time range, which Prisma can't express so it'd need a raw migration. I'm flagging it rather than pretending it's solved, and it's the exact same class of mistake the audit chain taught me: an app level check is not a guarantee, a database constraint is.
 
 ## Running it locally
 

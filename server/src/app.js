@@ -10,6 +10,7 @@ const prisma = require('./lib/prisma');
 const authRoutes = require('./routes/auth');
 const patientRoutes = require('./routes/patients');
 const auditRoutes = require('./routes/audit');
+const appointmentRoutes = require('./routes/appointments');
 
 for (const v of ['DATABASE_URL', 'JWT_SECRET']) {
   if (!process.env[v]) {
@@ -59,6 +60,7 @@ app.get('/api/health', async (req, res) => {
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/patients', requireAuth, patientRoutes);
+app.use('/api/appointments', requireAuth, appointmentRoutes);
 app.use('/api/audit', requireAuth, auditRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
