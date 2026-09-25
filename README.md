@@ -28,6 +28,7 @@ Three roles, each sees and does different things. The whole permission setup liv
 | Edit clinical fields | yes | yes | no |
 | Delete patients | yes | no | no |
 | View audit log | yes | no | no |
+| Unlock staff accounts | yes | no | no |
 | See appointments | yes | yes | yes |
 | Book / reschedule | yes | no | yes |
 | Cancel | yes | no | yes |
@@ -65,11 +66,19 @@ The table is append only, there's just no API for editing or deleting entries. D
 
 That last part had a bug in it that I only found by running the verify endpoint after deleting a patient, which nothing had ever done before. `patientId` on the audit table used to be a foreign key set to null on delete, so removing a patient quietly rewrote that column on every audit row that mentioned them. The hash covers `patientId`, so verify started reporting those rows as tampered, and it was right to: they really had been modified after they were written. Nobody tampered with anything, two features that were each fine on their own just contradicted each other. An append only table cannot hold a reference that some other operation is allowed to rewrite. So the foreign key is gone, the id is stored as a plain value that nothing can touch, and the audit view resolves patient names with its own lookup instead. A deleted patient's id is a historical fact and the log's job is to keep it.
 
-Each entry also hashes the one before it, so it's not just append only by API design, it's tamper evident. `/api/audit/verify` (admin only) walks the chain and would catch a row edited directly in the database. Building this taught me something the hard way: my first version used a Postgres advisory lock to keep concurrent writers from corrupting the chain, and a real load test proved that lock doesn't actually hold through Supabase's connection pooler. Swapped it for a database uniqueness constraint plus a retry loop instead, which turned out to be the more correct answer anyway, not just a workaround.
+Each entry also hashes the one before it, so it's not just append only by API design, it's tamper evident. `/api/audit/verify` (admin only) walks the chain and would catch a row edited directly in the database. Building this taught me something the hard way: my first version used a Postgres advisory lock to keep concurrent writers from corrupting the chain, and a real load test proved that lock doesn't actually hold through Supabase's connection pooler. Swapped it for a database uniqueness constraint plus a retry loop instead, which turned out to be the more correct answer anyway, not just a workaround. There's a Verify chain button on the audit page now too, so you don't need curl to run it.
+
+### Actually reviewing the log
+
+A log nobody reads doesn't protect anyone. Real hospitals catch snooping after the fact, from the logs, so the audit page now has a review flags panel that scans the last 7 days for four patterns: one person opening 8 or more different charts inside an hour, 3 or more blocked attempts in an hour, 3 or more failed logins on one account in an hour, and chart access outside 7am to 7pm clinic time. The logic is a pure function in `server/src/lib/anomalies.js`, so the tests don't need a database. These are "go look" flags and not accusations. A doctor rounding on a full floor opens a lot of charts, and that's fine.
+
+You can also export the log as CSV, with whatever filter is set. Two things I had to think about there. Exporting the audit trail is itself sensitive since the data is leaving the system, so the export gets logged. There's no EXPORT action in the enum and adding one means a schema migration, so it goes in as LIST with the row count and filter written out. The second one is CSV injection. Spreadsheet apps run any cell starting with `=`, `+`, `-` or `@` as a formula, and a break the glass reason is free text somebody typed. So those cells get a leading quote and open as plain text.
 
 ### Auth details
 
 bcrypt at cost 12, JWTs that expire after an hour, accounts lock for 15 minutes after 5 bad passwords. Unknown emails still burn a bcrypt compare so you can't tell which accounts exist by timing. Login endpoint has its own rate limit on top of the global one.
+
+Admins get a Staff page that lists every account's failed attempts and lockout, and can unlock one early. The unlock is logged with what it cleared (attempt count and when the lock would have run out). Small detail I almost got wrong: the role guard writes `req.params.id` into the DENIED row's patient column, which is right for `/patients/:id`, so the unlock route uses `:userId` instead. Otherwise a front desk user poking at it would have left a staff account id sitting in the patient column of the audit log.
 
 ### Closing the back door Supabase leaves open
 
@@ -119,7 +128,7 @@ Open localhost:5173. The seed gives you three logins, also shown right on the lo
 
 Fun demo flow: log in as the provider, open a record, notice the SSN says not visible to your role. Try requesting emergency access to see it anyway (with a reason). Then log in as admin and check the audit page. Everything you just did is in there, including the break-glass entry.
 
-Tests live in `server/src/__tests__` (`npm test`, 40+ across five files) and run in CI on every push.
+Tests live in `server/src/__tests__` (`npm test`, 79 across eight files) and run in CI on every push.
 
 ## Deploying
 
@@ -136,6 +145,7 @@ server/
   src/lib/permissions.js    the role matrix
   src/lib/audit.js          audit write helper, hash-chained
   src/lib/auditHash.js      the hash chain itself
+  src/lib/anomalies.js      review flags over the audit log
   src/middleware/auth.js    JWT check + role guard
   src/config/passport.js    login, lockout
   src/routes/
