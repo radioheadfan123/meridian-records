@@ -229,3 +229,14 @@ label input, label select, label textarea { margin-top: 0.25rem; }
 .appt-status-checked_in { color: #1f7a4d; }
 .appt-status-completed { color: #6b6b66; }
 .appt-status-cancelled, .appt-status-no_show { color: #a33; }
+
+/* audit review tools */
+.anomalies { margin-bottom: 1rem; }
+.anomalies-head { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.4rem; }
+.flag-list { list-style: none; margin: 0 0 0.5rem; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.flag { display: flex; flex-wrap: wrap; gap: 0.3rem 0.75rem; align-items: baseline; padding: 0.45rem 0.7rem; border-left: 3px solid var(--rule); background: white; font-size: 0.9rem; }
+.flag-high { border-left-color: var(--red); background: var(--red-soft); }
+.flag-medium { border-left-color: var(--amber); background: var(--amber-soft); }
+.flag-type { font-weight: 600; }
+.verify-ok { color: var(--teal); background: var(--teal-soft); padding: 0.5rem 0.75rem; border-radius: 4px; }
+.page-head-actions .btn { white-space: nowrap; }
