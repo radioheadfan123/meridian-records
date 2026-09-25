@@ -5,6 +5,7 @@ import PatientList from './pages/PatientList';
 import PatientDetail from './pages/PatientDetail';
 import PatientForm from './pages/PatientForm';
 import AuditLog from './pages/AuditLog';
+import Staff from './pages/Staff';
 
 const ROLE_LABEL = { ADMIN: 'Administrator', PROVIDER: 'Provider', FRONT_DESK: 'Front desk' };
 
@@ -21,6 +22,7 @@ function Shell({ children }) {
         <nav>
           <NavLink to="/patients">Patients</NavLink>
           {user.role === 'ADMIN' && <NavLink to="/audit">Audit log</NavLink>}
+          {user.role === 'ADMIN' && <NavLink to="/staff">Staff</NavLink>}
         </nav>
         <div className="whoami">
           <div>
@@ -54,6 +56,7 @@ function Router() {
       <Route path="/patients/new" element={<Protected><PatientForm /></Protected>} />
       <Route path="/patients/:id" element={<Protected><PatientDetail /></Protected>} />
       <Route path="/audit" element={<Protected adminOnly><AuditLog /></Protected>} />
+      <Route path="/staff" element={<Protected adminOnly><Staff /></Protected>} />
       <Route path="*" element={<Navigate to={user ? '/patients' : '/login'} replace />} />
     </Routes>
   );

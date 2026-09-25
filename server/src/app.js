@@ -11,6 +11,7 @@ const authRoutes = require('./routes/auth');
 const patientRoutes = require('./routes/patients');
 const auditRoutes = require('./routes/audit');
 const appointmentRoutes = require('./routes/appointments');
+const userRoutes = require('./routes/users');
 
 for (const v of ['DATABASE_URL', 'JWT_SECRET']) {
   if (!process.env[v]) {
@@ -62,6 +63,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/patients', requireAuth, patientRoutes);
 app.use('/api/appointments', requireAuth, appointmentRoutes);
 app.use('/api/audit', requireAuth, auditRoutes);
+app.use('/api/users', requireAuth, userRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

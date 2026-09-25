@@ -9,6 +9,7 @@
 // update clinical              x       x
 // delete patient               x
 // view audit logs              x
+// manage staff accounts        x                       (list, unlock a lockout)
 // ---- scheduling (scoped view) ----------------------------------------------
 // view appointments            x       x         x
 // view appointment reason      x       x         x     (scheduling note, NOT the diagnosis)
