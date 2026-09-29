@@ -9,16 +9,21 @@ export default function PatientList() {
   const [q, setQ] = useState('');
   const [error, setError] = useState(null);
 
+  // Search runs on the server so each lookup lands in the audit log.
+  // Debounced so typing a name writes one audit row, not one per keystroke.
   useEffect(() => {
-    api('/patients').then((d) => setPatients(d.patients)).catch((e) => setError(e.message));
-  }, [api]);
+    const t = setTimeout(() => {
+      const query = q.trim();
+      api(query ? `/patients?q=${encodeURIComponent(query)}` : '/patients')
+        .then((d) => { setPatients(d.patients); setError(null); })
+        .catch((e) => setError(e.message));
+    }, q ? 400 : 0);
+    return () => clearTimeout(t);
+  }, [api, q]);
 
-  if (error) return <p className="error">{error}</p>;
-  if (!patients) return <p className="muted">Loading patients…</p>;
+  if (!patients && !error) return <p className="muted">Loading patients…</p>;
 
-  const filtered = patients.filter((p) =>
-    `${p.firstName} ${p.lastName}`.toLowerCase().includes(q.toLowerCase())
-  );
+  const filtered = patients || [];
 
   return (
     <div>
@@ -27,17 +32,19 @@ export default function PatientList() {
         <div className="page-head-actions">
           <input
             className="search"
-            placeholder="Filter by name"
+            placeholder="Search by name"
             value={q}
+            maxLength={60}
             onChange={(e) => setQ(e.target.value)}
-            aria-label="Filter patients by name"
+            aria-label="Search patients by name"
           />
           {user.permissions.createPatient && (
             <button className="btn btn-primary" onClick={() => nav('/patients/new')}>New patient</button>
           )}
         </div>
       </div>
-      <p className="muted small">This list shows demographics only. Sensitive fields decrypt on the record page, and each open is written to the audit log.</p>
+      <p className="muted small">This list shows demographics only. Sensitive fields decrypt on the record page. Every search and every record open is written to the audit log.</p>
+      {error && <p className="error">{error}</p>}
       <table className="table">
         <thead>
           <tr><th>Name</th><th>Date of birth</th><th>Phone</th><th></th></tr>

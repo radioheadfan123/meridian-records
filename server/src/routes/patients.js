@@ -29,11 +29,30 @@ function demographics(p) {
   };
 }
 
-// GET /api/patients — all roles, demographics only, never decrypts anything.
+const MAX_SEARCH_LENGTH = 60;
+
+// GET /api/patients?q=jane doe — all roles, demographics only, never decrypts anything.
+// Searching runs here rather than in the browser so every lookup is audited: the
+// audit row keeps the exact search text, because "who looked up whom" is the question
+// a privacy officer asks. Each word must match a first or last name.
 router.get('/', async (req, res, next) => {
   try {
-    const patients = await prisma.patient.findMany({ orderBy: { lastName: 'asc' } });
-    await audit({ userId: req.user.id, action: 'LIST', detail: `listed ${patients.length} patients`, req });
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (q.length > MAX_SEARCH_LENGTH) {
+      return res.status(400).json({ error: `Search must be ${MAX_SEARCH_LENGTH} characters or fewer` });
+    }
+    const terms = q.split(/\s+/).filter(Boolean);
+    const where = terms.length
+      ? { AND: terms.map((t) => ({ OR: [
+          { firstName: { contains: t, mode: 'insensitive' } },
+          { lastName: { contains: t, mode: 'insensitive' } },
+        ] })) }
+      : undefined;
+    const patients = await prisma.patient.findMany({ where, orderBy: { lastName: 'asc' } });
+    const detail = terms.length
+      ? `searched "${q}": ${patients.length} match${patients.length === 1 ? '' : 'es'}`
+      : `listed ${patients.length} patients`;
+    await audit({ userId: req.user.id, action: 'LIST', detail, req });
     res.json({ patients: patients.map(demographics) });
   } catch (err) {
     next(err);

@@ -74,6 +74,8 @@ A log nobody reads doesn't protect anyone. Real hospitals catch snooping after t
 
 You can also export the log as CSV, with whatever filter is set. Two things I had to think about there. Exporting the audit trail is itself sensitive since the data is leaving the system, so the export gets logged. There's no EXPORT action in the enum and adding one means a schema migration, so it goes in as LIST with the row count and filter written out. The second one is CSV injection. Spreadsheet apps run any cell starting with `=`, `+`, `-` or `@` as a formula, and a break the glass reason is free text somebody typed. So those cells get a leading quote and open as plain text.
 
+Patient search runs on the server now too. It used to load the whole list and filter it in the browser, which meant looking someone up by name left no trace at all, and "who searched for this patient" is exactly the question a privacy officer asks after a snooping complaint. Now `GET /api/patients?q=` does the matching (every word has to hit a first or last name, case doesn't matter) and the LIST row keeps the exact search text plus how many matched. The search box waits a beat before firing so typing a name writes one audit row instead of one per keystroke. Searches over 60 characters get a 400 before they ever reach the database.
+
 ### Auth details
 
 bcrypt at cost 12, JWTs that expire after an hour, accounts lock for 15 minutes after 5 bad passwords. Unknown emails still burn a bcrypt compare so you can't tell which accounts exist by timing. Login endpoint has its own rate limit on top of the global one.
@@ -128,7 +130,7 @@ Open localhost:5173. The seed gives you three logins, also shown right on the lo
 
 Fun demo flow: log in as the provider, open a record, notice the SSN says not visible to your role. Try requesting emergency access to see it anyway (with a reason). Then log in as admin and check the audit page. Everything you just did is in there, including the break-glass entry.
 
-Tests live in `server/src/__tests__` (`npm test`, 79 across eight files) and run in CI on every push.
+Tests live in `server/src/__tests__` (`npm test`, 84 across nine files) and run in CI on every push.
 
 ## Deploying
 
