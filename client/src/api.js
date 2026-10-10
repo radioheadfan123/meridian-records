@@ -1,4 +1,7 @@
-const BASE = import.meta.env.VITE_API_URL || '';
+// Production calls go to the same origin and Netlify proxies /api/* to Railway (see
+// public/_redirects). That keeps the refresh cookie first-party: browsers that block
+// third-party cookies (Safari, Chrome's tracking protection) would drop it otherwise.
+const BASE = import.meta.env.PROD ? '' : import.meta.env.VITE_API_URL || '';
 
 export async function api(path, { method = 'GET', body, token } = {}) {
   const res = await fetch(`${BASE}/api${path}`, {

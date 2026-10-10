@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../AuthContext';
-import { download } from '../api';
 
 const ACTIONS = ['', 'LOGIN', 'LOGIN_FAILED', 'LIST', 'READ', 'CREATE', 'UPDATE', 'DELETE', 'DENIED', 'BREAK_GLASS'];
 
@@ -48,7 +47,7 @@ function Anomalies() {
 }
 
 export default function AuditLog() {
-  const { api, token } = useAuth();
+  const { api, download } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [action, setAction] = useState('');
@@ -72,7 +71,6 @@ export default function AuditLog() {
       const params = new URLSearchParams();
       if (action) params.set('action', action);
       await download(`/audit/export?${params}`, {
-        token,
         filename: `audit-log-${new Date().toISOString().slice(0, 10)}.csv`,
       });
     } catch (e) {

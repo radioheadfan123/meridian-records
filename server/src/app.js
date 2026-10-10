@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const passport = require('./config/passport');
 const { requireAuth } = require('./middleware/auth');
 const prisma = require('./lib/prisma');
+const { clientIp } = require('./lib/clientIp');
 
 const authRoutes = require('./routes/auth');
 const patientRoutes = require('./routes/patients');
@@ -39,13 +40,14 @@ app.use(
 app.use(express.json({ limit: '100kb' }));
 app.use(passport.initialize());
 
-// Global limiter: 300 requests / 15 min per IP. Login has its own stricter one.
+// Global limiter: 300 requests / 15 min per client. Login has its own stricter one.
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 300,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: clientIp,
   })
 );
 
