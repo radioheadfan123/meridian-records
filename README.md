@@ -98,7 +98,7 @@ The JWT used to sit in localStorage for an hour, which meant any XSS bug could c
 
 Refresh re-reads the user from the database every time, so if an admin changes someone's role or the account gets locked, that takes effect within 15 minutes instead of lasting the whole 8 hour cookie.
 
-The catch I hit: the frontend is on Netlify and the API is on Railway, two different sites, so the cookie would count as third-party and Safari would just drop it. The fix is a Netlify rewrite (`client/public/_redirects`) that proxies `/api/*` to Railway, so the browser only ever talks to one origin and the cookie is first-party. That also meant every visitor now reached Railway from Netlify's servers, which would have put the whole internet in one rate-limit bucket (10 logins per 15 minutes, total). The limiters now key on the first `X-Forwarded-For` address, the same one the audit log already records.
+The catch I hit: the frontend is on Netlify and the API is on Railway, two different sites, so the cookie would count as third-party and Safari would just drop it. The fix is a Netlify rewrite (`client/public/_redirects`) that proxies `/api/*` to Railway, so the browser only ever talks to one origin and the cookie is first-party. That also meant every visitor now reached Railway from Netlify's servers, which would have put the whole internet in one rate-limit bucket (10 logins per 15 minutes, total). Worse, Netlify puts its own address first in `X-Forwarded-For`, so the audit log would have started recording Netlify instead of the person. Netlify passes the real client in `X-Nf-Client-Connection-Ip`, so the limiters and the audit log now read that first (`server/src/lib/clientIp.js`).
 
 ### Stuff a real system would do that this doesn't
 
@@ -138,7 +138,7 @@ Open localhost:5173. The seed gives you three logins, also shown right on the lo
 
 Fun demo flow: log in as the provider, open a record, notice the SSN says not visible to your role. Try requesting emergency access to see it anyway (with a reason). Then log in as admin and check the audit page. Everything you just did is in there, including the break-glass entry.
 
-Tests live in `server/src/__tests__` (`npm test`, 90 across ten files) and run in CI on every push.
+Tests live in `server/src/__tests__` (`npm test`, 92 across eleven files) and run in CI on every push.
 
 ## Deploying
 

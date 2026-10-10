@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const prisma = require('./prisma');
 const { GENESIS_HASH, computeHash } = require('./auditHash');
+const { clientIp } = require('./clientIp');
 
 // Concurrent writers race to read "the current chain tip" and both can try to chain
 // from it. An advisory lock was tried first but isn't reliable here: this app connects
@@ -25,7 +26,7 @@ function sleep(ms) {
 // Awaited by callers so a failed audit write fails the request:
 // under HIPAA, an unauditable access should not happen silently.
 async function audit({ userId, action, patientId = null, fieldsAccessed = [], detail = null, req = null }) {
-  const ip = req ? (req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null) : null;
+  const ip = req ? clientIp(req) : null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const id = crypto.randomUUID();
