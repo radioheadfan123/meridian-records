@@ -1,0 +1,24 @@
+name: Keep demo awake
+
+# The free Supabase project pauses after about a week with no database
+# activity, and then the live demo shows "db: unreachable". /api/health runs
+# SELECT 1, so hitting it daily counts as activity. A failed run also emails
+# the repo owner, which makes this a free uptime check.
+
+on:
+  schedule:
+    - cron: '17 14 * * *'  # daily, 14:17 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit the health check through the live site
+        run: |
+          for i in 1 2 3; do
+            body=$(curl -s -m 60 https://meridian-records.netlify.app/api/health) && echo "$body"
+            echo "$body" | grep -q '"db":"ok"' && exit 0
+            sleep 60
+          done
+          echo "Health check never reported db ok" && exit 1
