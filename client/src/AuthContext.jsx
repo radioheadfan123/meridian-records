@@ -41,9 +41,11 @@ export function AuthProvider({ children }) {
     [apply]
   );
 
-  const logout = useCallback(() => {
+  // Wait for the server to clear the cookie before showing the login page: a reload or a
+  // closed tab would otherwise cancel the request and leave the 8-hour session on this browser.
+  const logout = useCallback(async () => {
+    await api('/auth/logout', { method: 'POST' }).catch(() => {});
     apply(null);
-    api('/auth/logout', { method: 'POST' }).catch(() => {});
   }, [apply]);
 
   // An expired access token is renewed once from the cookie and the request retried;

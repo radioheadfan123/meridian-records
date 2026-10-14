@@ -57,8 +57,10 @@ test('refresh with the cookie returns a working access token and rotates the coo
   expect(me.status).toBe(200);
 });
 
-test('refresh without a cookie, or with a garbage one, is 401', async () => {
-  expect((await request(app).post('/api/auth/refresh')).status).toBe(401);
+test('refresh without a cookie is a quiet 204 with no token; a garbage cookie is 401', async () => {
+  const none = await request(app).post('/api/auth/refresh');
+  expect(none.status).toBe(204);
+  expect(none.body.token).toBeUndefined();
   expect((await request(app).post('/api/auth/refresh').set('Cookie', 'mr_refresh=nope')).status).toBe(401);
 });
 

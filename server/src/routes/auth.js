@@ -93,7 +93,9 @@ router.post('/login', loginLimiter, (req, res, next) => {
 // token lifetime instead of lasting the whole refresh window.
 router.post('/refresh', async (req, res, next) => {
   const raw = readCookie(req, REFRESH_COOKIE);
-  if (!raw) return res.status(401).json({ error: 'No session' });
+  // No cookie just means "not signed in", which every first visit is: answer 204, not an
+  // error, so signed-out page loads don't log a failed request in the browser console.
+  if (!raw) return res.status(204).end();
   let payload;
   try {
     payload = jwt.verify(raw, refreshSecret());
