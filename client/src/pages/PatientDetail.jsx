@@ -96,8 +96,11 @@ export default function PatientDetail() {
   async function save(e) {
     e.preventDefault();
     setSaveError(null);
+    // Send only what changed: the audit row then names exactly the fields edited.
+    const changed = Object.fromEntries(Object.entries(form).filter(([k, v]) => v !== (patient[k] ?? '')));
+    if (Object.keys(changed).length === 0) { setEditing(false); return; }
     try {
-      await api(`/patients/${id}`, { method: 'PUT', body: form });
+      await api(`/patients/${id}`, { method: 'PUT', body: changed });
       setEditing(false);
       load();
     } catch (err) {

@@ -47,7 +47,7 @@ export default function PatientList() {
       {error && <p className="error">{error}</p>}
       <table className="table">
         <thead>
-          <tr><th>Name</th><th>Date of birth</th><th>Phone</th><th></th></tr>
+          <tr><th>Name</th><th>Date of birth</th><th>Phone</th><th className="td-open"></th></tr>
         </thead>
         <tbody>
           {filtered.map((p) => (

@@ -48,7 +48,7 @@ async function main() {
           phone,
           email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`,
           address: `${100 + i} Synthetic Ave, Testville, TX`,
-          ssnEnc: encryptField(`900-55-${String(1000 + i).slice(1)}`),
+          ssnEnc: encryptField(`900-55-${String(1000 + i)}`),
           diagnosisEnc: encryptField(diagnosis),
           medicationHistoryEnc: encryptField(meds),
         },

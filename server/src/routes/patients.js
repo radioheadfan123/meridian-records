@@ -29,6 +29,35 @@ function demographics(p) {
   };
 }
 
+// Field checks for create and update. Returns an error message, or null when the value is fine.
+// Empty optional fields are allowed (they clear the value); required ones must be present.
+const FIELD_RULES = {
+  firstName: { label: 'First name', required: true, max: 100 },
+  lastName: { label: 'Last name', required: true, max: 100 },
+  phone: { label: 'Phone', required: true, max: 20, pattern: /^[0-9+().\- ]{7,20}$/, hint: 'digits, spaces, + ( ) . -' },
+  email: { label: 'Email', max: 200, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, hint: 'a valid email address' },
+  address: { label: 'Address', max: 200 },
+  ssn: { label: 'SSN', max: 11, pattern: /^\d{3}-?\d{2}-?\d{4}$/, hint: '123-45-6789' },
+  diagnosis: { label: 'Diagnosis', max: 2000 },
+  medicationHistory: { label: 'Medication history', max: 2000 },
+};
+function fieldError(k, v) {
+  if (k === 'dob') {
+    const d = new Date(v);
+    if (typeof v !== 'string' || Number.isNaN(d.getTime())) return 'Date of birth is not a valid date';
+    if (d > new Date() || d < new Date('1900-01-01')) return 'Date of birth must be between 1900 and today';
+    return null;
+  }
+  const r = FIELD_RULES[k];
+  if (!r) return null;
+  if (v === null || v === undefined || v === '') return r.required ? `${r.label} is required` : null;
+  if (typeof v !== 'string') return `${r.label} must be text`;
+  if (r.required && !v.trim()) return `${r.label} is required`;
+  if (v.length > r.max) return `${r.label} is too long (max ${r.max} characters)`;
+  if (r.pattern && !r.pattern.test(v.trim())) return `${r.label} should look like ${r.hint}`;
+  return null;
+}
+
 const MAX_SEARCH_LENGTH = 60;
 
 // GET /api/patients?q=jane doe — all roles, demographics only, never decrypts anything.
@@ -142,6 +171,10 @@ router.post('/', requireRole('ADMIN', 'FRONT_DESK'), async (req, res, next) => {
     if (!firstName || !lastName || !dob || !phone) {
       return res.status(400).json({ error: 'firstName, lastName, dob and phone are required' });
     }
+    for (const k of ['firstName', 'lastName', 'dob', 'phone', 'email', 'address', 'ssn', 'diagnosis', 'medicationHistory']) {
+      const msg = fieldError(k, req.body[k]);
+      if (msg) return res.status(400).json({ error: msg });
+    }
 
     // Front desk can set SSN at intake but not clinical fields.
     const updatable = PERMISSIONS[req.user.role].updateFields;
@@ -186,6 +219,10 @@ router.put('/:id', async (req, res, next) => {
         req,
       });
       return res.status(403).json({ error: `Your role cannot update: ${forbidden.join(', ')}` });
+    }
+    for (const k of attempted) {
+      const msg = fieldError(k, req.body[k]);
+      if (msg) return res.status(400).json({ error: msg });
     }
 
     const data = {};

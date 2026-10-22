@@ -41,7 +41,7 @@ export default function PatientForm() {
         <div className="form-grid">
           <label>First name<input value={form.firstName} onChange={set('firstName')} required /></label>
           <label>Last name<input value={form.lastName} onChange={set('lastName')} required /></label>
-          <label>Date of birth<input type="date" value={form.dob} onChange={set('dob')} required /></label>
+          <label>Date of birth<input type="date" value={form.dob} onChange={set('dob')} min="1900-01-01" max={new Date().toISOString().slice(0, 10)} required /></label>
           <label>Phone<input value={form.phone} onChange={set('phone')} required /></label>
           <label>Email<input type="email" value={form.email} onChange={set('email')} /></label>
           <label>Address<input value={form.address} onChange={set('address')} /></label>

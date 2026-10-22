@@ -195,6 +195,12 @@ label input, label select, label textarea { margin-top: 0.25rem; }
   .topbar { flex-wrap: wrap; gap: 0.75rem; }
   .form-grid, .dl { grid-template-columns: 1fr; }
   .audit-table { display: block; overflow-x: auto; }
+  /* Phones: appointment actions drop under the details instead of running off the card,
+     and the patient list drops the extra "Open record" column (the name is already a link). */
+  .appt { flex-direction: column; gap: 0.5rem; }
+  .appt-side { flex-wrap: wrap; }
+  .td-open { display: none; }
+  .table td.mono { white-space: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
