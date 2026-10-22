@@ -30,11 +30,19 @@ async function audit({ userId, action, patientId = null, fieldsAccessed = [], de
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const id = crypto.randomUUID();
-    const timestamp = new Date();
 
     try {
-      const prev = await prisma.auditLog.findFirst({ orderBy: { timestamp: 'desc' }, select: { hash: true } });
+      // The newest timestamp is usually the tip, but not always: a request that read the
+      // clock first can commit second, so its row sits after a row with a later timestamp.
+      // Trusting the timestamp then picks a row that already has a child, and every write
+      // after that collides forever. Walking the real prevHash pointers (unique, indexed)
+      // from there always lands on the true tip.
+      let prev = await prisma.auditLog.findFirst({ orderBy: { timestamp: 'desc' }, select: { hash: true } });
+      for (let next = prev; next; next = await prisma.auditLog.findUnique({ where: { prevHash: next.hash }, select: { hash: true } })) {
+        prev = next;
+      }
       const prevHash = prev?.hash ?? GENESIS_HASH;
+      const timestamp = new Date();   // after the tip read, so chain order and time order agree
       const hash = computeHash({ id, userId, action, patientId, fieldsAccessed, detail, ip, timestamp, prevHash });
 
       return await prisma.auditLog.create({

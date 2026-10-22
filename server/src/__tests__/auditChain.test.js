@@ -29,7 +29,7 @@ describe('audit() chains sequential entries', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock('../lib/prisma', () => ({
-      auditLog: { create: jest.fn(), findFirst: jest.fn() },
+      auditLog: { create: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn() },
     }));
   });
 
@@ -74,6 +74,21 @@ describe('audit() chains sequential entries', () => {
     expect(prisma.auditLog.findFirst).toHaveBeenCalledTimes(2);
     expect(prisma.auditLog.create).toHaveBeenCalledTimes(2);
     expect(prisma.auditLog.create.mock.calls[1][0].data.prevHash).toBe('tip-B-hash');
+  });
+
+  test('when the newest timestamp already has a child, it chains from the real tip instead of colliding forever', async () => {
+    const prisma = require('../lib/prisma');
+    const { audit } = require('../lib/audit');
+
+    // Row A has the latest timestamp, but row B (older clock read, later commit) already chains from it.
+    prisma.auditLog.findFirst.mockResolvedValueOnce({ hash: 'A-hash' });
+    prisma.auditLog.findUnique.mockImplementation(async ({ where }) => (where.prevHash === 'A-hash' ? { hash: 'B-hash' } : null));
+    prisma.auditLog.create.mockResolvedValueOnce({ id: 'row-final' });
+
+    await audit({ userId: 'user-1', action: 'READ' });
+
+    expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(prisma.auditLog.create.mock.calls[0][0].data.prevHash).toBe('B-hash');
   });
 
   test('a non-collision database error is not retried - it propagates immediately', async () => {
@@ -133,7 +148,7 @@ describe('GET /api/audit/verify', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock('../lib/prisma', () => ({
-      auditLog: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
+      auditLog: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
     }));
   });
 
