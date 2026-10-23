@@ -91,6 +91,25 @@ describe('audit() chains sequential entries', () => {
     expect(prisma.auditLog.create.mock.calls[0][0].data.prevHash).toBe('B-hash');
   });
 
+  test('auditedTransaction reruns the whole transaction (data change included) after a collision', async () => {
+    const prisma = require('../lib/prisma');
+    const { auditedTransaction } = require('../lib/audit');
+
+    // The mock "transaction" hands back the same client, like a real tx client would.
+    prisma.$transaction = jest.fn((fn) => fn(prisma));
+    prisma.auditLog.findFirst.mockResolvedValue(null);
+    const collision = Object.assign(new Error('Unique constraint failed'), { code: 'P2002', meta: { target: ['prevHash'] } });
+    prisma.auditLog.create.mockRejectedValueOnce(collision).mockResolvedValueOnce({ id: 'row-final' });
+    const work = jest.fn(async (tx, auditTx) => {
+      await auditTx({ userId: 'user-1', action: 'CREATE', patientId: 'p1' });
+      return 'patient';
+    });
+
+    await expect(auditedTransaction(work)).resolves.toBe('patient');
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(work).toHaveBeenCalledTimes(2);
+  });
+
   test('a non-collision database error is not retried - it propagates immediately', async () => {
     const prisma = require('../lib/prisma');
     const { audit } = require('../lib/audit');

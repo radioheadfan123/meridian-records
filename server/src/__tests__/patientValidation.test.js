@@ -3,6 +3,8 @@
 // 2999 or a phone of "abc" was saved as-is.
 
 jest.mock('../lib/prisma', () => ({
+  // Runs the callback against this same mock, so routes using auditedTransaction work unchanged.
+  $transaction: jest.fn(function (fn) { return fn(this); }),
   patient: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
   auditLog: { create: jest.fn(), findFirst: jest.fn() },
 }));

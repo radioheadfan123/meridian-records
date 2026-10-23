@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { encryptField, decryptField } = require('../lib/crypto');
-const { audit } = require('../lib/audit');
+const { audit, auditedTransaction } = require('../lib/audit');
 const { requireRole } = require('../middleware/auth');
 const { PERMISSIONS, SENSITIVE_FIELDS, DEMOGRAPHIC_FIELDS } = require('../lib/permissions');
 
@@ -189,8 +189,11 @@ router.post('/', requireRole('ADMIN', 'FRONT_DESK'), async (req, res, next) => {
     if (diagnosis !== undefined) { data.diagnosisEnc = encryptField(diagnosis); written.push('diagnosis'); }
     if (medicationHistory !== undefined) { data.medicationHistoryEnc = encryptField(medicationHistory); written.push('medicationHistory'); }
 
-    const patient = await prisma.patient.create({ data });
-    await audit({ userId: req.user.id, action: 'CREATE', patientId: patient.id, fieldsAccessed: written, req });
+    const patient = await auditedTransaction(async (tx, auditTx) => {
+      const created = await tx.patient.create({ data });
+      await auditTx({ userId: req.user.id, action: 'CREATE', patientId: created.id, fieldsAccessed: written, req });
+      return created;
+    });
     res.status(201).json({ patient: demographics(patient) });
   } catch (err) {
     next(err);
@@ -232,29 +235,34 @@ router.put('/:id', async (req, res, next) => {
       else data[k] = req.body[k];
     }
 
-    const updated = await prisma.patient.update({ where: { id: patient.id }, data });
-    await audit({ userId: req.user.id, action: 'UPDATE', patientId: patient.id, fieldsAccessed: attempted, req });
+    const updated = await auditedTransaction(async (tx, auditTx) => {
+      const row = await tx.patient.update({ where: { id: patient.id }, data });
+      await auditTx({ userId: req.user.id, action: 'UPDATE', patientId: patient.id, fieldsAccessed: attempted, req });
+      return row;
+    });
     res.json({ patient: demographics(updated) });
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE /api/patients/:id — admin only. Audit rows survive via onDelete: SetNull.
+// DELETE /api/patients/:id, admin only. Audit rows keep the patientId (not a foreign key).
 router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
   try {
     const patient = await prisma.patient.findUnique({ where: { id: req.params.id } });
     if (!patient) return res.status(404).json({ error: 'Patient not found' });
-    // Log first so the row still carries the patientId reference at write time,
-    // then the FK is nulled by the delete (name preserved in detail).
-    await audit({
-      userId: req.user.id,
-      action: 'DELETE',
-      patientId: patient.id,
-      detail: `deleted patient ${patient.firstName} ${patient.lastName}`,
-      req,
+    // One transaction: if the delete fails the DELETE row rolls back too, and the
+    // other way round. The name goes in detail since the patient row will be gone.
+    await auditedTransaction(async (tx, auditTx) => {
+      await auditTx({
+        userId: req.user.id,
+        action: 'DELETE',
+        patientId: patient.id,
+        detail: `deleted patient ${patient.firstName} ${patient.lastName}`,
+        req,
+      });
+      await tx.patient.delete({ where: { id: patient.id } });
     });
-    await prisma.patient.delete({ where: { id: patient.id } });
     res.json({ ok: true });
   } catch (err) {
     next(err);

@@ -22,32 +22,35 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Every read and write of a patient record goes through here.
-// Awaited by callers so a failed audit write fails the request:
-// under HIPAA, an unauditable access should not happen silently.
-async function audit({ userId, action, patientId = null, fieldsAccessed = [], detail = null, req = null }) {
+// Writes one chained audit row through `db`, which is either the shared client or a
+// transaction client. No retry here: inside a transaction a collision has already
+// aborted the transaction, so the caller retries the whole unit (see withRetry).
+async function appendAudit(db, { userId, action, patientId = null, fieldsAccessed = [], detail = null, req = null }) {
   const ip = req ? clientIp(req) : null;
+  const id = crypto.randomUUID();
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const id = crypto.randomUUID();
+  // The newest timestamp is usually the tip, but not always: a request that read the
+  // clock first can commit second, so its row sits after a row with a later timestamp.
+  // Trusting the timestamp then picks a row that already has a child, and every write
+  // after that collides forever. Walking the real prevHash pointers (unique, indexed)
+  // from there always lands on the true tip.
+  let prev = await db.auditLog.findFirst({ orderBy: { timestamp: 'desc' }, select: { hash: true } });
+  for (let next = prev; next; next = await db.auditLog.findUnique({ where: { prevHash: next.hash }, select: { hash: true } })) {
+    prev = next;
+  }
+  const prevHash = prev?.hash ?? GENESIS_HASH;
+  const timestamp = new Date();   // after the tip read, so chain order and time order agree
+  const hash = computeHash({ id, userId, action, patientId, fieldsAccessed, detail, ip, timestamp, prevHash });
 
+  return db.auditLog.create({
+    data: { id, userId, action, patientId, fieldsAccessed, detail, ip, timestamp, prevHash, hash },
+  });
+}
+
+async function withRetry(fn) {
+  for (let attempt = 1; ; attempt++) {
     try {
-      // The newest timestamp is usually the tip, but not always: a request that read the
-      // clock first can commit second, so its row sits after a row with a later timestamp.
-      // Trusting the timestamp then picks a row that already has a child, and every write
-      // after that collides forever. Walking the real prevHash pointers (unique, indexed)
-      // from there always lands on the true tip.
-      let prev = await prisma.auditLog.findFirst({ orderBy: { timestamp: 'desc' }, select: { hash: true } });
-      for (let next = prev; next; next = await prisma.auditLog.findUnique({ where: { prevHash: next.hash }, select: { hash: true } })) {
-        prev = next;
-      }
-      const prevHash = prev?.hash ?? GENESIS_HASH;
-      const timestamp = new Date();   // after the tip read, so chain order and time order agree
-      const hash = computeHash({ id, userId, action, patientId, fieldsAccessed, detail, ip, timestamp, prevHash });
-
-      return await prisma.auditLog.create({
-        data: { id, userId, action, patientId, fieldsAccessed, detail, ip, timestamp, prevHash, hash },
-      });
+      return await fn();
     } catch (err) {
       if (!isPrevHashCollision(err) || attempt >= MAX_RETRIES) throw err;
       // Jittered backoff: every retrier waking up at the same instant just recreates
@@ -58,4 +61,22 @@ async function audit({ userId, action, patientId = null, fieldsAccessed = [], de
   }
 }
 
-module.exports = { audit };
+// Every read and write of a patient record goes through here.
+// Awaited by callers so a failed audit write fails the request:
+// under HIPAA, an unauditable access should not happen silently.
+function audit(entry) {
+  return withRetry(() => appendAudit(prisma, entry));
+}
+
+// A data change and its audit row, committed together or not at all. Without this a
+// failed audit write still left the change behind (QA 2026-10-22 #5): the user saw an
+// error, but the patient existed with no CREATE row. `work(tx, auditTx)` makes its
+// change through `tx` and calls `auditTx(entry)` once. The tip is read and the row
+// written inside the same transaction, and the @@unique([prevHash]) constraint still
+// decides any race: the loser's whole transaction rolls back (data change included)
+// and is retried against the new tip.
+function auditedTransaction(work) {
+  return withRetry(() => prisma.$transaction((tx) => work(tx, (entry) => appendAudit(tx, entry))));
+}
+
+module.exports = { audit, auditedTransaction };

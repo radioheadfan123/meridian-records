@@ -3,6 +3,8 @@
 // contain fields the requester's role is allowed to see.
 
 jest.mock('../lib/prisma', () => ({
+  // Runs the callback against this same mock, so routes using auditedTransaction work unchanged.
+  $transaction: jest.fn(function (fn) { return fn(this); }),
   patient: {
     findMany: jest.fn(),
     findUnique: jest.fn(),
