@@ -164,7 +164,6 @@ export default function Scheduling({ patientId }) {
             {a.reason !== undefined && (
               <div className="appt-reason">
                 {a.reason || <span className="muted">no reason on file</span>}
-                <span className="sealed-tag">encrypted at field level</span>
               </div>
             )}
             <div className="muted small">{a.provider ? `With ${a.provider.name}` : 'Provider not yet assigned'}</div>

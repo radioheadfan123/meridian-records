@@ -21,7 +21,7 @@ function SealedField({ label, value, canView }) {
   }
   return (
     <div className="sealed">
-      <div className="sealed-label">{label} <span className="sealed-tag">encrypted at field level</span></div>
+      <div className="sealed-label">{label}</div>
       <div className="sealed-body mono">
         {revealed ? (value ?? <span className="muted">not on file</span>) : '••••••••••••'}
       </div>
@@ -147,7 +147,13 @@ export default function PatientDetail() {
           </section>
           <section className="card">
             <div className="page-head">
-              <h2>Protected fields</h2>
+              {/* One tag for the whole record (it used to repeat on every field and appointment). */}
+              <h2>
+                Protected fields{' '}
+                <span className="sealed-tag" title="SSN, diagnosis, medication history and scheduling reasons are each encrypted before storage">
+                  encrypted at field level
+                </span>
+              </h2>
               {breakGlass?.active ? null : (
                 <button className="btn btn-ghost btn-sm btn-danger" onClick={() => setBgOpen(!bgOpen)}>
                   {bgOpen ? 'Cancel' : 'Request emergency access'}
